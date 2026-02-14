@@ -25,6 +25,7 @@ AI-агент Telegram-бот для создания контента. Прин
 | База данных | PostgreSQL + SQLAlchemy 2.0 (asyncpg) + Alembic |
 | Планировщик | APScheduler 3.x |
 | Конфигурация | Pydantic Settings + `.env` |
+| Логирование | stdout + RotatingFileHandler (`logs/bot.log`) |
 | Инфраструктура | Docker + docker-compose |
 
 ## 🚀 Быстрый старт
@@ -60,6 +61,29 @@ docker-compose up -d
 ```
 
 Это поднимет PostgreSQL и бота. БД создастся автоматически, дефолтные настройки засеются при первом запуске.
+
+### Продакшен-деплой
+
+Если PostgreSQL уже работает в отдельном Docker-контейнере (в сети `ai_serivices_web`):
+
+```bash
+git clone https://github.com/your-username/tg-bot-creator-content.git
+cd tg-bot-creator-content
+cp .env.example .env
+# Заполнить .env (DATABASE_URL указать на существующий PostgreSQL)
+```
+
+```bash
+# Первый запуск
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml exec tg_bot_creator alembic upgrade head
+
+# Обновление
+git pull
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+Бот автоматически перезапускается при падении (`restart: unless-stopped`). Логи доступны в `logs/bot.log` и через `docker logs tg_bot_creator`.
 
 ### 4. Настроить LLM-провайдеры
 
@@ -226,8 +250,10 @@ alembic revision --autogenerate -m "описание"  # создать мигр
 ├── docs/
 │   ├── PRD_TG_Bot_Creator.md
 │   └── IMPLEMENTATION_PLAN.md
+├── logs/                      # Логи (gitignored)
 ├── Dockerfile
-├── docker-compose.yml
+├── docker-compose.yml         # Dev (с локальным PostgreSQL)
+├── docker-compose.prod.yml    # Prod (внешняя сеть, volume для логов)
 ├── requirements.txt
 └── .env.example
 ```

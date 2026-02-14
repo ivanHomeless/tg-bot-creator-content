@@ -20,7 +20,8 @@
 | База данных | PostgreSQL + SQLAlchemy 2.0 (asyncpg) + Alembic |
 | Планировщик | APScheduler 3.x (AsyncIOScheduler, `add_job` + `CronTrigger`) |
 | Конфигурация | Pydantic Settings (`.env`), конфиг провайдеров в БД (JSON) |
-| Инфраструктура | Docker, docker-compose |
+| Логирование | stdout + RotatingFileHandler (`logs/bot.log`, 10 MB, 5 бэкапов) |
+| Инфраструктура | Docker, docker-compose (dev + prod) |
 | Тестирование | pytest + pytest-asyncio, aiosqlite (in-memory) |
 
 ---
@@ -45,7 +46,8 @@
 | Поисковый запрос Tavily | Сырой пользовательский ввод (без LLM-реформулирования) |
 | Parse mode | HTML по умолчанию |
 | Структура проекта | Слоистые пакеты |
-| Docker | Full compose (dev) + standalone Dockerfile (prod). Docker first — dev-среда с первого шага |
+| Docker | `docker-compose.yml` (dev, с локальным PG) + `docker-compose.prod.yml` (prod, внешняя сеть `ai_serivices_web`). Docker first — dev-среда с первого шага |
+| Логирование | Дуальный вывод: stdout (для `docker logs`) + `RotatingFileHandler` в `logs/bot.log` (10 MB, 5 файлов) |
 | Транспорт бота | Polling (архитектура готова к webhook) |
 | Версионирование текста | Только последняя версия (перезапись при рерайте) |
 | Тестирование | Обязательные тесты после каждого шага, aiosqlite in-memory, моки всех внешних API |

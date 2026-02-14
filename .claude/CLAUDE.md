@@ -14,7 +14,8 @@ AI-agent Telegram bot for content management. Accepts product names, searches th
 - **Database**: PostgreSQL + SQLAlchemy 2.0 (asyncpg) + Alembic
 - **Scheduler**: APScheduler 3.x (AsyncIOScheduler)
 - **Config**: Pydantic Settings from `.env`, LLM providers config in DB (JSON)
-- **Infrastructure**: Docker + docker-compose
+- **Infrastructure**: Docker + docker-compose (dev: `docker-compose.yml` with local PG, prod: `docker-compose.prod.yml` with external network)
+- **Logging**: stdout + `RotatingFileHandler` → `logs/bot.log` (10 MB rotation, 5 backups)
 
 ## Key File Paths
 - `main.py` — entry point (bot init, polling, scheduler start)
@@ -36,6 +37,8 @@ AI-agent Telegram bot for content management. Accepts product names, searches th
 - `bot/middlewares/media_group.py` — album collection with 1.5s buffer
 - `bot/keyboards/` — reply (main menu) + inline (post actions, queue nav, settings)
 - `bot/states/fsm.py` — FSM states (CreatePost, EditPost, RewritePost, EditPrompt, EditSchedule, EditProviders)
+- `docker-compose.prod.yml` — production compose (external network, log volume, restart policy)
+- `logs/` — log files directory (gitignored, mounted as volume in prod)
 
 ## LLM Provider System
 
@@ -72,6 +75,8 @@ Array order = priority. Can be changed via bot without restart.
 - Single channel ID in `.env` (no multi-channel)
 - Polling transport (webhook-ready architecture)
 - Docker first — dev environment available from Step 0
+- Production: `docker-compose.prod.yml` — connects to external Docker network (`ai_serivices_web`) with existing PostgreSQL, logs mounted as volume
+- Logging: dual output (stdout for `docker logs` + file with rotation for persistent history)
 
 ## External Libraries — Context7
 
