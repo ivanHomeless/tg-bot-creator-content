@@ -1,3 +1,4 @@
+import asyncio
 import io
 import json
 
@@ -118,7 +119,7 @@ class TestCreatePostHandler:
             msg, state, repo,
             tavily_api_key="fake-key",
             llm_router=AsyncMock(),
-            album=None,
+            album_future=None,
         )
 
         # Post created with correct data
@@ -166,11 +167,15 @@ class TestCreatePostHandler:
         status_msg = AsyncMock()
         msg.answer = AsyncMock(side_effect=[status_msg, AsyncMock()])
 
+        # Create a resolved Future with the album
+        album_future = asyncio.get_event_loop().create_future()
+        album_future.set_result([album_msg1, album_msg2])
+
         await process_create_post(
             msg, state, repo,
             tavily_api_key="fake-key",
             llm_router=AsyncMock(),
-            album=[album_msg1, album_msg2],
+            album_future=album_future,
         )
 
         call_kwargs = repo.create_post.call_args.kwargs
@@ -209,7 +214,7 @@ class TestCreatePostHandler:
             msg, state, repo,
             tavily_api_key="fake-key",
             llm_router=AsyncMock(),
-            album=None,
+            album_future=None,
         )
 
         call_kwargs = repo.create_post.call_args.kwargs
@@ -242,7 +247,7 @@ class TestCreatePostHandler:
             msg, state, repo,
             tavily_api_key="fake-key",
             llm_router=AsyncMock(),
-            album=None,
+            album_future=None,
         )
 
         # Second answer call is the preview
@@ -275,7 +280,7 @@ class TestCreatePostHandler:
             msg, repo,
             tavily_api_key="fake-key",
             llm_router=AsyncMock(),
-            album=None,
+            album_future=None,
         )
 
         repo.create_post.assert_called_once()
