@@ -594,7 +594,7 @@ class TestQueueHandler:
         repo = AsyncMock()
         repo.count_approved_posts.return_value = 0
 
-        await cmd_queue(msg, repo)
+        await cmd_queue(msg, AsyncMock(), repo)
 
         msg.answer.assert_called_once()
         assert "пуста" in msg.answer.call_args[0][0].lower()
@@ -610,7 +610,7 @@ class TestQueueHandler:
             _make_approved_post(3, "Third post"),
         ]
 
-        await cmd_queue(msg, repo)
+        await cmd_queue(msg, AsyncMock(), repo)
 
         msg.answer.assert_called_once()
         kwargs = msg.answer.call_args.kwargs
@@ -629,7 +629,7 @@ class TestQueueHandler:
             _make_approved_post(i, f"Post {i}") for i in range(1, 6)
         ]
 
-        await cmd_queue(msg, repo)
+        await cmd_queue(msg, AsyncMock(), repo)
 
         markup = msg.answer.call_args.kwargs["reply_markup"]
         # 5 post rows + 1 nav row

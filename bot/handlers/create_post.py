@@ -8,7 +8,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
 from bot.keyboards.inline import post_actions_keyboard
-from bot.keyboards.reply import BTN_CREATE_POST
+from bot.keyboards.reply import BTN_CREATE_POST, BTN_QUEUE, BTN_SETTINGS
 from bot.states.fsm import CreatePost
 from db.repo import Repository
 from services.ai.graph import build_graph
@@ -116,7 +116,7 @@ async def start_create_post(message: Message, state: FSMContext) -> None:
     )
 
 
-@router.message(CreatePost.waiting_for_input)
+@router.message(CreatePost.waiting_for_input, F.text.not_in({BTN_CREATE_POST, BTN_QUEUE, BTN_SETTINGS}))
 async def process_create_post(
     message: Message,
     state: FSMContext,

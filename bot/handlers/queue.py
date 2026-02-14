@@ -2,6 +2,7 @@ import math
 import re
 
 from aiogram import F, Router
+from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from bot.keyboards.inline import post_actions_keyboard, queue_keyboard
@@ -57,7 +58,8 @@ async def _show_queue_page(
 # ---- entry: reply button ----
 
 @router.message(F.text == BTN_QUEUE)
-async def cmd_queue(message: Message, repo: Repository) -> None:
+async def cmd_queue(message: Message, state: FSMContext, repo: Repository) -> None:
+    await state.clear()
     await _show_queue_page(message, repo, page=1)
 
 

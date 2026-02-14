@@ -25,7 +25,8 @@ router = Router()
 # ---- entry ----
 
 @router.message(F.text == BTN_SETTINGS)
-async def cmd_settings(message: Message) -> None:
+async def cmd_settings(message: Message, state: FSMContext) -> None:
+    await state.clear()
     await message.answer("⚙️ Настройки", reply_markup=settings_keyboard())
 
 
