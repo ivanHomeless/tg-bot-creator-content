@@ -1,3 +1,6 @@
+import io
+import json
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -7,7 +10,15 @@ from bot.handlers.start import cmd_start
 from bot.handlers.create_post import start_create_post, process_create_post
 from bot.handlers.post_actions import on_post_action, on_edit_text, on_rewrite_prompt
 from bot.handlers.queue import cmd_queue, on_queue_page, on_queue_post_detail
-from bot.states.fsm import CreatePost, EditPost, RewritePost
+from bot.handlers.settings import (
+    on_edit_prompt_start,
+    on_prompt_text,
+    on_prompt_done,
+    on_schedule_input,
+    on_edit_providers_start,
+    on_providers_json_file,
+)
+from bot.states.fsm import CreatePost, EditPost, EditPrompt, EditSchedule, RewritePost
 from db.models import PostStatus
 from services.llm.base import LLMResponse
 
@@ -511,3 +522,173 @@ class TestQueueHandler:
         repo.get_approved_posts.assert_called_once_with(page=2, per_page=5)
         cb.message.edit_text.assert_called_once()
         cb.answer.assert_called_once()
+
+
+# --------------- Settings Handler ---------------
+
+
+class TestSettingsHandler:
+    async def test_edit_prompt_single_message(self):
+        """Single text message → prompt saved to DB."""
+        # Start prompt editing
+        cb = AsyncMock()
+        cb.data = "settings:prompt"
+        cb.message = AsyncMock()
+        cb.answer = AsyncMock()
+        repo = AsyncMock()
+        repo.get_setting.return_value = None
+        state = AsyncMock()
+        state.get_data.return_value = {"prompt_parts": []}
+
+        await on_edit_prompt_start(cb, state, repo)
+        state.set_state.assert_called_once_with(EditPrompt.collecting_parts)
+
+        # Send text
+        msg = _make_message("private")
+        msg.text = "New prompt text"
+        state2 = AsyncMock()
+        state2.get_data.return_value = {"prompt_parts": []}
+        await on_prompt_text(msg, state2)
+        state2.update_data.assert_called_once()
+
+        # Finish
+        cb2 = AsyncMock()
+        cb2.message = AsyncMock()
+        cb2.answer = AsyncMock()
+        state3 = AsyncMock()
+        state3.get_data.return_value = {"prompt_parts": ["New prompt text"]}
+        repo2 = AsyncMock()
+
+        await on_prompt_done(cb2, state3, repo2)
+
+        repo2.set_setting.assert_called_once_with("system_prompt", "New prompt text")
+        state3.clear.assert_called_once()
+
+    async def test_edit_prompt_multi_message(self):
+        """Multiple messages concatenated with newline."""
+        cb = AsyncMock()
+        cb.message = AsyncMock()
+        cb.answer = AsyncMock()
+        state = AsyncMock()
+        state.get_data.return_value = {"prompt_parts": ["Part 1", "Part 2"]}
+        repo = AsyncMock()
+
+        await on_prompt_done(cb, state, repo)
+
+        repo.set_setting.assert_called_once_with("system_prompt", "Part 1\nPart 2")
+
+    async def test_edit_prompt_txt_file(self):
+        """Sending .txt file extracts its content as a prompt part."""
+        from bot.handlers.settings import on_prompt_document
+
+        msg = _make_message("private")
+        msg.document = MagicMock()
+        msg.document.file_name = "prompt.txt"
+
+        bot = AsyncMock()
+        file_content = io.BytesIO(b"File prompt content")
+        bot.download.return_value = file_content
+
+        state = AsyncMock()
+        state.get_data.return_value = {"prompt_parts": []}
+
+        await on_prompt_document(msg, state, bot)
+
+        state.update_data.assert_called_once()
+        updated_parts = state.update_data.call_args.kwargs["prompt_parts"]
+        assert "File prompt content" in updated_parts
+
+    @patch("bot.handlers.settings.CronTrigger")
+    async def test_edit_schedule_valid_cron(self, mock_cron_cls):
+        """Valid cron expression → saved to DB."""
+        mock_cron_cls.from_crontab.return_value = MagicMock()
+
+        msg = _make_message("private")
+        msg.text = "0 9 * * *"
+        state = AsyncMock()
+        repo = AsyncMock()
+
+        await on_schedule_input(msg, state, repo)
+
+        repo.set_setting.assert_called_once_with("cron_schedule", "0 9 * * *")
+        state.clear.assert_called_once()
+
+    @patch("bot.handlers.settings.CronTrigger")
+    async def test_edit_schedule_invalid_cron(self, mock_cron_cls):
+        """Invalid cron expression → error message, state not cleared."""
+        mock_cron_cls.from_crontab.side_effect = ValueError("bad cron")
+
+        msg = _make_message("private")
+        msg.text = "not a cron"
+        state = AsyncMock()
+        repo = AsyncMock()
+
+        await on_schedule_input(msg, state, repo)
+
+        repo.set_setting.assert_not_called()
+        state.clear.assert_not_called()
+        # Error message sent
+        assert msg.answer.call_count == 1
+        assert "❌" in msg.answer.call_args[0][0]
+
+    async def test_edit_providers_shows_current_config(self):
+        """Starting provider edit shows current JSON config."""
+        cb = AsyncMock()
+        cb.data = "settings:providers"
+        cb.message = AsyncMock()
+        cb.answer = AsyncMock()
+
+        state = AsyncMock()
+        repo = AsyncMock()
+        current_config = json.dumps([{"type": "gemini", "api_keys": ["k1"]}])
+        repo.get_setting.return_value = current_config
+
+        await on_edit_providers_start(cb, state, repo)
+
+        # Current config sent to user
+        first_answer = cb.message.answer.call_args_list[0]
+        assert current_config in first_answer[0][0]
+
+    async def test_edit_providers_valid_json_file(self):
+        """Valid .json file → saved to DB."""
+        config = [
+            {"type": "gemini", "api_keys": ["k1"], "models": ["flash"]},
+            {"type": "openai_compatible", "api_keys": ["sk-1"], "models": ["gpt-4o"]},
+        ]
+
+        msg = _make_message("private")
+        msg.document = MagicMock()
+        msg.document.file_name = "providers.json"
+
+        bot = AsyncMock()
+        file_content = io.BytesIO(json.dumps(config).encode("utf-8"))
+        bot.download.return_value = file_content
+
+        state = AsyncMock()
+        repo = AsyncMock()
+
+        await on_providers_json_file(msg, state, repo, bot)
+
+        repo.set_setting.assert_called_once()
+        saved = json.loads(repo.set_setting.call_args[0][1])
+        assert len(saved) == 2
+        state.clear.assert_called_once()
+
+    async def test_edit_providers_invalid_json_file(self):
+        """Invalid JSON → rejection, state not cleared."""
+        msg = _make_message("private")
+        msg.document = MagicMock()
+        msg.document.file_name = "bad.json"
+
+        bot = AsyncMock()
+        file_content = io.BytesIO(b"not json at all")
+        bot.download.return_value = file_content
+
+        state = AsyncMock()
+        repo = AsyncMock()
+
+        await on_providers_json_file(msg, state, repo, bot)
+
+        repo.set_setting.assert_not_called()
+        state.clear.assert_not_called()
+        assert "❌" in msg.answer.call_args[0][0]

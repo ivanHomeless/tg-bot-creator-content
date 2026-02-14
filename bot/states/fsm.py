@@ -19,3 +19,7 @@ class EditPrompt(StatesGroup):
 
 class EditSchedule(StatesGroup):
     waiting_for_cron = State()
+
+
+class EditProviders(StatesGroup):
+    waiting_for_json = State()
