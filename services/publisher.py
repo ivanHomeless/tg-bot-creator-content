@@ -74,8 +74,6 @@ async def publish_post(bot: Bot, post: Post, channel_id: int) -> None:
     if len(media_ids) == 1:
         kind, file_id = _parse_media_id(media_ids[0])
         if len(text) <= MAX_CAPTION_LENGTH:
-            # Single media with caption
-            media = _build_input_media(kind, file_id, caption=text)
             if kind == "photo":
                 await _send_with_retry(
                     bot.send_photo, channel_id, file_id,

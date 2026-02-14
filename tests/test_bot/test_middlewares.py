@@ -67,7 +67,7 @@ class TestAllowedChatsMiddleware:
 
 class TestMediaGroupMiddleware:
     async def test_media_group_collects_album(self):
-        """3 messages with same media_group_id → handler gets album of 3."""
+        """3 messages with same media_group_id → handler gets album_future resolving to 3."""
         middleware = MediaGroupMiddleware()
         handler = AsyncMock()
 
@@ -87,10 +87,15 @@ class TestMediaGroupMiddleware:
         ]
         await asyncio.gather(*tasks)
 
-        # Handler called only once with album of 3
+        # Handler called only once with album_future
         handler.assert_called_once()
         call_data = handler.call_args[1] if handler.call_args[1] else handler.call_args[0][1]
-        assert len(call_data["album"]) == 3
+        album_future = call_data["album_future"]
+        assert album_future is not None
+
+        # Future should be resolved with all 3 messages
+        album = await album_future
+        assert len(album) == 3
 
     async def test_media_group_single_message(self):
         """Message without media_group_id passes through immediately."""
@@ -104,5 +109,5 @@ class TestMediaGroupMiddleware:
 
         handler.assert_called_once()
         call_data = handler.call_args[0][1]
-        assert call_data["album"] is None
+        assert call_data["album_future"] is None
         assert result == "ok"
