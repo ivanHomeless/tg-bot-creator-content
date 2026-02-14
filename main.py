@@ -1,6 +1,8 @@
 import asyncio
 import json
 import logging
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -126,9 +128,22 @@ async def build_app(cfg=None):
 
 
 async def main() -> None:
+    log_fmt = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    log_dir = Path(__file__).parent / "logs"
+    log_dir.mkdir(exist_ok=True)
+
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        format=log_fmt,
+        handlers=[
+            logging.StreamHandler(),
+            RotatingFileHandler(
+                log_dir / "bot.log",
+                maxBytes=10 * 1024 * 1024,  # 10 MB
+                backupCount=5,
+                encoding="utf-8",
+            ),
+        ],
     )
 
     dp, bot, scheduler, engine = await build_app()

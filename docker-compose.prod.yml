@@ -1,5 +1,16 @@
 services:
-  bot:
+  tg_bot_creator:
     build: .
+    container_name: tg_bot_creator
     env_file: .env
-    restart: always
+    environment:
+      - TZ=Europe/Moscow
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - ai_serivices_web
+
+networks:
+  ai_serivices_web:
+    external: true
