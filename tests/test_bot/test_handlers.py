@@ -6,6 +6,7 @@ from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardMarkup
 from bot.handlers.start import cmd_start
 from bot.handlers.create_post import start_create_post, process_create_post
 from bot.handlers.post_actions import on_post_action, on_edit_text, on_rewrite_prompt
+from bot.handlers.queue import cmd_queue, on_queue_page, on_queue_post_detail
 from bot.states.fsm import CreatePost, EditPost, RewritePost
 from db.models import PostStatus
 from services.llm.base import LLMResponse
@@ -407,3 +408,106 @@ class TestPostActionsHandler:
         repo.update_post_status.assert_not_called()
         cb.answer.assert_called_once()
         assert "редактируется" in cb.answer.call_args[0][0]
+
+
+# --------------- Queue Handler ---------------
+
+
+def _make_approved_post(post_id: int, text: str = "Post text"):
+    p = MagicMock()
+    p.id = post_id
+    p.generated_text = text
+    p.original_text = "query"
+    return p
+
+
+class TestQueueHandler:
+    async def test_queue_empty(self):
+        """Empty queue → 'Очередь пуста'."""
+        msg = _make_message("private")
+        repo = AsyncMock()
+        repo.count_approved_posts.return_value = 0
+
+        await cmd_queue(msg, repo)
+
+        msg.answer.assert_called_once()
+        assert "пуста" in msg.answer.call_args[0][0].lower()
+
+    async def test_queue_shows_posts(self):
+        """3 approved posts displayed with inline keyboard."""
+        msg = _make_message("private")
+        repo = AsyncMock()
+        repo.count_approved_posts.return_value = 3
+        repo.get_approved_posts.return_value = [
+            _make_approved_post(1, "First post"),
+            _make_approved_post(2, "Second post"),
+            _make_approved_post(3, "Third post"),
+        ]
+
+        await cmd_queue(msg, repo)
+
+        msg.answer.assert_called_once()
+        kwargs = msg.answer.call_args.kwargs
+        markup = kwargs.get("reply_markup")
+        assert isinstance(markup, InlineKeyboardMarkup)
+        # 3 post rows + 1 nav row = 4 rows
+        assert len(markup.inline_keyboard) == 4
+
+    async def test_queue_pagination(self):
+        """7 posts → page 1 has 5 items, page 2 has 2 items."""
+        # Page 1
+        msg = _make_message("private")
+        repo = AsyncMock()
+        repo.count_approved_posts.return_value = 7
+        repo.get_approved_posts.return_value = [
+            _make_approved_post(i, f"Post {i}") for i in range(1, 6)
+        ]
+
+        await cmd_queue(msg, repo)
+
+        markup = msg.answer.call_args.kwargs["reply_markup"]
+        # 5 post rows + 1 nav row
+        assert len(markup.inline_keyboard) == 6
+        # Nav row should have page counter and next button
+        nav_row = markup.inline_keyboard[-1]
+        assert any("1/2" in btn.text for btn in nav_row)
+        assert any("➡️" in btn.text for btn in nav_row)
+
+    async def test_queue_post_detail(self):
+        """Clicking a post shows its preview with action buttons."""
+        cb = AsyncMock()
+        cb.data = "queue:post:5"
+        cb.message = AsyncMock()
+        cb.message.edit_text = AsyncMock()
+        cb.answer = AsyncMock()
+
+        repo = AsyncMock()
+        post = _make_approved_post(5, "Detailed post text")
+        repo.get_post.return_value = post
+
+        await on_queue_post_detail(cb, repo)
+
+        cb.message.edit_text.assert_called_once()
+        call_kwargs = cb.message.edit_text.call_args.kwargs
+        assert isinstance(call_kwargs.get("reply_markup"), InlineKeyboardMarkup)
+
+    async def test_queue_page_navigation(self):
+        """Page navigation edits the message with new page content."""
+        cb = AsyncMock()
+        cb.data = "queue:page:2"
+        cb.message = AsyncMock()
+        cb.message.edit_text = AsyncMock()
+        cb.answer = AsyncMock()
+
+        repo = AsyncMock()
+        repo.count_approved_posts.return_value = 7
+        repo.get_approved_posts.return_value = [
+            _make_approved_post(6, "Post 6"),
+            _make_approved_post(7, "Post 7"),
+        ]
+
+        await on_queue_page(cb, repo)
+
+        repo.get_approved_posts.assert_called_once_with(page=2, per_page=5)
+        cb.message.edit_text.assert_called_once()
+        cb.answer.assert_called_once()
