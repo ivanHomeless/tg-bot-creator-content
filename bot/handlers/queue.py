@@ -1,4 +1,5 @@
 import math
+import re
 
 from aiogram import F, Router
 from aiogram.types import CallbackQuery, Message
@@ -11,11 +12,19 @@ router = Router()
 
 POSTS_PER_PAGE = 5
 
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _strip_html(text: str) -> str:
+    """Remove HTML tags from text."""
+    return _HTML_TAG_RE.sub("", text)
+
 
 def _truncate(text: str, length: int = 40) -> str:
-    if len(text) <= length:
-        return text
-    return text[:length - 1] + "…"
+    clean = _strip_html(text).strip()
+    if len(clean) <= length:
+        return clean
+    return clean[:length - 1] + "…"
 
 
 async def _show_queue_page(
