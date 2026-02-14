@@ -53,6 +53,11 @@ class MediaGroupMiddleware(BaseMiddleware):
             asyncio.create_task(self._collect(media_group_id))
 
         self._albums[media_group_id].append(event)
+        logger.info(
+            "MediaGroup %s: msg #%d (is_first=%s, chat=%s)",
+            media_group_id, len(self._albums[media_group_id]),
+            is_first, event.chat.id,
+        )
 
         if not is_first:
             # Signal the collector that a new message arrived

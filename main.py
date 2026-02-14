@@ -99,7 +99,7 @@ async def build_app(cfg=None):
     access_mw = AllowedChatsMiddleware()
     dp.message.middleware(access_mw)
     dp.callback_query.middleware(access_mw)
-    dp.message.middleware(MediaGroupMiddleware())
+    dp.message.outer_middleware(MediaGroupMiddleware())
 
     # Routers — post_actions before create_post so FSM handlers
     # (edit/rewrite) are checked before group_create_post
