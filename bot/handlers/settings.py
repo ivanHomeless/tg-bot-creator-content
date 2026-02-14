@@ -1,5 +1,6 @@
 import json
 import logging
+from html import escape as html_escape
 
 from aiogram import Bot, F, Router
 from aiogram.fsm.context import FSMContext
@@ -47,7 +48,7 @@ async def on_edit_prompt_start(
     current = await repo.get_setting("system_prompt")
     if current:
         await callback.message.answer(
-            f"Текущий промпт:\n\n<pre>{current}</pre>",
+            f"Текущий промпт:\n\n<pre>{html_escape(current)}</pre>",
             parse_mode="HTML",
         )
     await state.set_state(EditPrompt.collecting_parts)

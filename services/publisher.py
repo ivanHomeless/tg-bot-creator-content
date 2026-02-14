@@ -2,7 +2,7 @@ import asyncio
 import logging
 
 from aiogram import Bot
-from aiogram.exceptions import TelegramRetryAfter
+from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 from aiogram.types import InputMediaDocument, InputMediaPhoto, InputMediaVideo
 
 from db.models import Post
@@ -60,9 +60,15 @@ async def publish_post(bot: Bot, post: Post, channel_id: int) -> None:
 
     if not media_ids:
         # Text only
-        await _send_with_retry(
-            bot.send_message, channel_id, text, parse_mode="HTML"
-        )
+        try:
+            await _send_with_retry(
+                bot.send_message, channel_id, text, parse_mode="HTML"
+            )
+        except TelegramBadRequest:
+            logger.warning("HTML parse failed, sending as plain text")
+            await _send_with_retry(
+                bot.send_message, channel_id, text
+            )
         return
 
     if len(media_ids) == 1:

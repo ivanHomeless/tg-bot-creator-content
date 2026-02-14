@@ -14,6 +14,7 @@ from config.settings import get_settings
 from db.engine import build_engine, build_session_factory
 from db.repo import Repository
 from services.ai.prompts import DEFAULT_SYSTEM_PROMPT
+from services.publisher import publish_post
 from services.scheduler import create_scheduler
 
 logger = logging.getLogger(__name__)
@@ -108,6 +109,12 @@ async def build_app(cfg=None):
     dp["llm_router"] = llm_router
     dp["channel_id"] = cfg.channel_id
     dp["session_factory"] = session_factory
+
+    # Closure so handlers call publish_post(post) without bot/channel_id
+    async def _publish_post(post):
+        await publish_post(bot, post, cfg.channel_id)
+
+    dp["publish_post"] = _publish_post
 
     # Scheduler
     scheduler = create_scheduler(session_factory, bot, cfg.channel_id, cron)

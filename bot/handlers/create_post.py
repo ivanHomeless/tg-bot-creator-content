@@ -2,6 +2,7 @@ import json
 import logging
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
@@ -87,8 +88,14 @@ async def process_create_post(
         pass
 
     # Send preview with inline buttons
-    await message.answer(
-        generated_text,
-        reply_markup=post_actions_keyboard(post.id),
-        parse_mode="HTML",
-    )
+    try:
+        await message.answer(
+            generated_text,
+            reply_markup=post_actions_keyboard(post.id),
+            parse_mode="HTML",
+        )
+    except TelegramBadRequest:
+        await message.answer(
+            generated_text,
+            reply_markup=post_actions_keyboard(post.id),
+        )
