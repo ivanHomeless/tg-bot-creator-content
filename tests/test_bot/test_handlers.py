@@ -12,8 +12,8 @@ from bot.handlers.post_actions import on_post_action, on_edit_text, on_rewrite_p
 from bot.handlers.queue import cmd_queue, on_queue_page, on_queue_post_detail
 from bot.handlers.settings import (
     on_edit_prompt_start,
-    on_prompt_text,
-    on_prompt_done,
+    on_prompt_document,
+    on_prompt_not_a_file,
     on_schedule_input,
     on_edit_providers_start,
     on_providers_json_file,
@@ -528,59 +528,33 @@ class TestQueueHandler:
 
 
 class TestSettingsHandler:
-    async def test_edit_prompt_single_message(self):
-        """Single text message → prompt saved to DB."""
-        # Start prompt editing
+    async def test_edit_prompt_text_rejected(self):
+        """Text message → rejected, asks for .txt file."""
+        msg = _make_message("private")
+        msg.text = "Some text"
+
+        await on_prompt_not_a_file(msg)
+
+        msg.answer.assert_called_once()
+        assert ".txt" in msg.answer.call_args[0][0]
+
+    async def test_edit_prompt_start_sends_file(self):
+        """Starting prompt edit sends current prompt as .txt file."""
         cb = AsyncMock()
         cb.data = "settings:prompt"
         cb.message = AsyncMock()
         cb.answer = AsyncMock()
         repo = AsyncMock()
-        repo.get_setting.return_value = None
+        repo.get_setting.return_value = "Current prompt"
         state = AsyncMock()
-        state.get_data.return_value = {"prompt_parts": []}
 
         await on_edit_prompt_start(cb, state, repo)
-        state.set_state.assert_called_once_with(EditPrompt.collecting_parts)
 
-        # Send text
-        msg = _make_message("private")
-        msg.text = "New prompt text"
-        state2 = AsyncMock()
-        state2.get_data.return_value = {"prompt_parts": []}
-        await on_prompt_text(msg, state2)
-        state2.update_data.assert_called_once()
-
-        # Finish
-        cb2 = AsyncMock()
-        cb2.message = AsyncMock()
-        cb2.answer = AsyncMock()
-        state3 = AsyncMock()
-        state3.get_data.return_value = {"prompt_parts": ["New prompt text"]}
-        repo2 = AsyncMock()
-
-        await on_prompt_done(cb2, state3, repo2)
-
-        repo2.set_setting.assert_called_once_with("system_prompt", "New prompt text")
-        state3.clear.assert_called_once()
-
-    async def test_edit_prompt_multi_message(self):
-        """Multiple messages concatenated with newline."""
-        cb = AsyncMock()
-        cb.message = AsyncMock()
-        cb.answer = AsyncMock()
-        state = AsyncMock()
-        state.get_data.return_value = {"prompt_parts": ["Part 1", "Part 2"]}
-        repo = AsyncMock()
-
-        await on_prompt_done(cb, state, repo)
-
-        repo.set_setting.assert_called_once_with("system_prompt", "Part 1\nPart 2")
+        cb.message.answer_document.assert_called_once()
+        state.set_state.assert_called_once_with(EditPrompt.waiting_for_prompt)
 
     async def test_edit_prompt_txt_file(self):
-        """Sending .txt file extracts its content as a prompt part."""
-        from bot.handlers.settings import on_prompt_document
-
+        """Sending .txt file → prompt saved to DB immediately."""
         msg = _make_message("private")
         msg.document = MagicMock()
         msg.document.file_name = "prompt.txt"
@@ -590,13 +564,12 @@ class TestSettingsHandler:
         bot.download.return_value = file_content
 
         state = AsyncMock()
-        state.get_data.return_value = {"prompt_parts": []}
+        repo = AsyncMock()
 
-        await on_prompt_document(msg, state, bot)
+        await on_prompt_document(msg, state, repo, bot)
 
-        state.update_data.assert_called_once()
-        updated_parts = state.update_data.call_args.kwargs["prompt_parts"]
-        assert "File prompt content" in updated_parts
+        repo.set_setting.assert_called_once_with("system_prompt", "File prompt content")
+        state.clear.assert_called_once()
 
     @patch("bot.handlers.settings.CronTrigger")
     async def test_edit_schedule_valid_cron(self, mock_cron_cls):
@@ -632,7 +605,7 @@ class TestSettingsHandler:
         assert "❌" in msg.answer.call_args[0][0]
 
     async def test_edit_providers_shows_current_config(self):
-        """Starting provider edit shows current JSON config."""
+        """Starting provider edit sends current JSON config as file."""
         cb = AsyncMock()
         cb.data = "settings:providers"
         cb.message = AsyncMock()
@@ -645,9 +618,11 @@ class TestSettingsHandler:
 
         await on_edit_providers_start(cb, state, repo)
 
-        # Current config sent to user
-        first_answer = cb.message.answer.call_args_list[0]
-        assert current_config in first_answer[0][0]
+        # Current config sent as file
+        cb.message.answer_document.assert_called_once()
+        call_args = cb.message.answer_document.call_args
+        assert call_args[1].get("caption") == "Текущий конфиг провайдеров" or \
+               call_args[0][0].filename == "llm_providers.json"
 
     async def test_edit_providers_valid_json_file(self):
         """Valid .json file → saved to DB."""

@@ -1,13 +1,11 @@
 import json
 import logging
-from html import escape as html_escape
 
 from aiogram import Bot, F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import (
+    BufferedInputFile,
     CallbackQuery,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
     Message,
 )
 from apscheduler.triggers.cron import CronTrigger
@@ -20,16 +18,6 @@ from db.repo import Repository
 logger = logging.getLogger(__name__)
 
 router = Router()
-
-DONE_PROMPT_CB = "prompt:done"
-
-
-def _done_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Я закончил отправку", callback_data=DONE_PROMPT_CB)]
-        ]
-    )
 
 
 # ---- entry ----
@@ -47,23 +35,20 @@ async def on_edit_prompt_start(
 ) -> None:
     current = await repo.get_setting("system_prompt")
     if current:
-        await callback.message.answer(
-            f"Текущий промпт:\n\n<pre>{html_escape(current)}</pre>",
-            parse_mode="HTML",
+        file = BufferedInputFile(
+            current.encode("utf-8"), filename="system_prompt.txt"
         )
-    await state.set_state(EditPrompt.collecting_parts)
-    await state.update_data(prompt_parts=[])
+        await callback.message.answer_document(file, caption="Текущий промпт")
+    await state.set_state(EditPrompt.waiting_for_prompt)
     await callback.message.answer(
-        "Отправьте новый промпт. Можно несколькими сообщениями и/или .txt файлами.\n"
-        "Когда закончите, нажмите кнопку ниже.",
-        reply_markup=_done_keyboard(),
+        "Отправьте новый промпт в виде .txt файла.",
     )
     await callback.answer()
 
 
-@router.message(EditPrompt.collecting_parts, F.document)
+@router.message(EditPrompt.waiting_for_prompt, F.document)
 async def on_prompt_document(
-    message: Message, state: FSMContext, bot: Bot
+    message: Message, state: FSMContext, repo: Repository, bot: Bot
 ) -> None:
     doc = message.document
     if not doc.file_name.endswith(".txt"):
@@ -72,38 +57,18 @@ async def on_prompt_document(
 
     file = await bot.download(doc)
     text = file.read().decode("utf-8", errors="replace")
-    data = await state.get_data()
-    parts = data.get("prompt_parts", [])
-    parts.append(text)
-    await state.update_data(prompt_parts=parts)
-    await message.answer("📄 Файл принят. Продолжайте или нажмите «Я закончил».")
-
-
-@router.message(EditPrompt.collecting_parts, F.text)
-async def on_prompt_text(message: Message, state: FSMContext) -> None:
-    data = await state.get_data()
-    parts = data.get("prompt_parts", [])
-    parts.append(message.text)
-    await state.update_data(prompt_parts=parts)
-    await message.answer("✏️ Принято. Продолжайте или нажмите «Я закончил».")
-
-
-@router.callback_query(F.data == DONE_PROMPT_CB)
-async def on_prompt_done(
-    callback: CallbackQuery, state: FSMContext, repo: Repository
-) -> None:
-    data = await state.get_data()
-    parts = data.get("prompt_parts", [])
-    if not parts:
-        await callback.answer("Вы ничего не отправили.")
+    if not text.strip():
+        await message.answer("Файл пустой. Отправьте файл с текстом.")
         return
 
-    full_prompt = "\n".join(parts)
-    await repo.set_setting("system_prompt", full_prompt)
+    await repo.set_setting("system_prompt", text)
     await state.clear()
-    await callback.message.edit_reply_markup(reply_markup=None)
-    await callback.message.answer("✅ Промпт обновлён.")
-    await callback.answer()
+    await message.answer("✅ Промпт обновлён.")
+
+
+@router.message(EditPrompt.waiting_for_prompt)
+async def on_prompt_not_a_file(message: Message) -> None:
+    await message.answer("Отправьте .txt файл с промптом.")
 
 
 # ========== SCHEDULE ==========
@@ -150,11 +115,12 @@ async def on_edit_providers_start(
     callback: CallbackQuery, state: FSMContext, repo: Repository
 ) -> None:
     current = await repo.get_setting("llm_providers")
-    if current:
-        await callback.message.answer(
-            f"Текущий конфиг провайдеров:\n\n<pre>{current}</pre>",
-            parse_mode="HTML",
+    if current and current != "[]":
+        pretty = json.dumps(json.loads(current), indent=2, ensure_ascii=False)
+        file = BufferedInputFile(
+            pretty.encode("utf-8"), filename="llm_providers.json"
         )
+        await callback.message.answer_document(file, caption="Текущий конфиг провайдеров")
     else:
         await callback.message.answer("Конфиг провайдеров пока не задан.")
 

@@ -14,7 +14,7 @@ class RewritePost(StatesGroup):
 
 
 class EditPrompt(StatesGroup):
-    collecting_parts = State()
+    waiting_for_prompt = State()
 
 
 class EditSchedule(StatesGroup):
