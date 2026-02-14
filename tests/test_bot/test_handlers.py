@@ -17,6 +17,10 @@ from bot.handlers.settings import (
     on_schedule_input,
     on_edit_providers_start,
     on_providers_json_file,
+    on_chats_start,
+    on_chat_add_input,
+    on_chat_add_description,
+    on_chat_remove,
 )
 from bot.states.fsm import CreatePost, EditPost, EditPrompt, EditSchedule, RewritePost
 from db.models import PostStatus
@@ -604,23 +608,27 @@ class TestSettingsHandler:
         repo.set_setting.assert_called_once_with("system_prompt", "File prompt content")
         state.clear.assert_called_once()
 
+    @patch("bot.handlers.settings.reschedule")
     @patch("bot.handlers.settings.CronTrigger")
-    async def test_edit_schedule_valid_cron(self, mock_cron_cls):
-        """Valid cron expression → saved to DB."""
+    async def test_edit_schedule_valid_cron(self, mock_cron_cls, mock_reschedule):
+        """Valid cron expression → saved to DB + scheduler updated."""
         mock_cron_cls.from_crontab.return_value = MagicMock()
 
         msg = _make_message("private")
         msg.text = "0 9 * * *"
         state = AsyncMock()
         repo = AsyncMock()
+        scheduler = MagicMock()
 
-        await on_schedule_input(msg, state, repo)
+        await on_schedule_input(msg, state, repo, scheduler)
 
         repo.set_setting.assert_called_once_with("cron_schedule", "0 9 * * *")
+        mock_reschedule.assert_called_once_with(scheduler, "0 9 * * *")
         state.clear.assert_called_once()
 
+    @patch("bot.handlers.settings.reschedule")
     @patch("bot.handlers.settings.CronTrigger")
-    async def test_edit_schedule_invalid_cron(self, mock_cron_cls):
+    async def test_edit_schedule_invalid_cron(self, mock_cron_cls, mock_reschedule):
         """Invalid cron expression → error message, state not cleared."""
         mock_cron_cls.from_crontab.side_effect = ValueError("bad cron")
 
@@ -628,10 +636,12 @@ class TestSettingsHandler:
         msg.text = "not a cron"
         state = AsyncMock()
         repo = AsyncMock()
+        scheduler = MagicMock()
 
-        await on_schedule_input(msg, state, repo)
+        await on_schedule_input(msg, state, repo, scheduler)
 
         repo.set_setting.assert_not_called()
+        mock_reschedule.assert_not_called()
         state.clear.assert_not_called()
         # Error message sent
         assert msg.answer.call_count == 1
@@ -700,3 +710,124 @@ class TestSettingsHandler:
         repo.set_setting.assert_not_called()
         state.clear.assert_not_called()
         assert "❌" in msg.answer.call_args[0][0]
+
+    # ---- Chats management ----
+
+    async def test_chats_list(self):
+        """settings:chats → shows list of allowed chats."""
+        cb = AsyncMock()
+        cb.data = "settings:chats"
+        cb.message = AsyncMock()
+        cb.answer = AsyncMock()
+
+        state = AsyncMock()
+        repo = AsyncMock()
+        chat_obj = MagicMock()
+        chat_obj.id = 1
+        chat_obj.telegram_id = -100123
+        chat_obj.username = "mygroup"
+        chat_obj.description = "My Group"
+        repo.get_all_allowed_chats.return_value = [chat_obj]
+
+        await on_chats_start(cb, state, repo)
+
+        cb.message.answer.assert_called_once()
+        # Description shown as label
+        call_kwargs = cb.message.answer.call_args
+        assert "Разрешённые чаты" in call_kwargs[0][0]
+        state.clear.assert_called_once()
+
+    async def test_add_chat_by_username_step1(self):
+        """Step 1: @username → resolves, asks for description."""
+        msg = _make_message("private")
+        msg.text = "@testgroup"
+        state = AsyncMock()
+        state.get_data.return_value = {}
+        repo = AsyncMock()
+        repo.is_chat_allowed.return_value = False
+
+        bot = AsyncMock()
+        chat_info = MagicMock()
+        chat_info.id = -1001234567890
+        chat_info.username = "testgroup"
+        bot.get_chat.return_value = chat_info
+
+        await on_chat_add_input(msg, state, repo, bot)
+
+        # Saves data to FSM and asks for description
+        state.update_data.assert_called_once_with(
+            telegram_id=-1001234567890, username="testgroup",
+        )
+        state.set_state.assert_called_once()
+        assert "описание" in msg.answer.call_args[0][0].lower()
+
+    async def test_add_chat_step2_description(self):
+        """Step 2: description → saves chat to DB."""
+        msg = _make_message("private")
+        msg.text = "Рабочая группа"
+        state = AsyncMock()
+        state.get_data.return_value = {
+            "telegram_id": -1001234567890,
+            "username": "testgroup",
+        }
+        repo = AsyncMock()
+        repo.add_allowed_chat.return_value = MagicMock()
+        repo.get_all_allowed_chats.return_value = []
+
+        await on_chat_add_description(msg, state, repo)
+
+        repo.add_allowed_chat.assert_called_once_with(
+            -1001234567890, username="testgroup", description="Рабочая группа",
+        )
+        state.clear.assert_called_once()
+
+    async def test_add_chat_by_id_step1(self):
+        """Step 1: numeric ID → asks for description."""
+        msg = _make_message("private")
+        msg.text = "-1009876543210"
+        state = AsyncMock()
+        repo = AsyncMock()
+        repo.is_chat_allowed.return_value = False
+
+        bot = AsyncMock()
+        bot.get_chat.side_effect = Exception("not found")
+
+        await on_chat_add_input(msg, state, repo, bot)
+
+        state.update_data.assert_called_once()
+        assert state.update_data.call_args[1]["telegram_id"] == -1009876543210
+        state.set_state.assert_called_once()
+
+    async def test_add_chat_duplicate(self):
+        """Adding already existing chat → message, no duplicate."""
+        msg = _make_message("private")
+        msg.text = "-100123"
+        state = AsyncMock()
+        repo = AsyncMock()
+        repo.is_chat_allowed.return_value = True
+
+        bot = AsyncMock()
+        bot.get_chat.side_effect = Exception("not found")
+
+        await on_chat_add_input(msg, state, repo, bot)
+
+        repo.add_allowed_chat.assert_not_called()
+
+    async def test_remove_chat(self):
+        """Remove chat via callback → removed from DB."""
+        cb = AsyncMock()
+        cb.data = "chats:remove:5"
+        cb.message = AsyncMock()
+        cb.answer = AsyncMock()
+
+        repo = AsyncMock()
+        chat_obj = MagicMock()
+        chat_obj.telegram_id = -100999
+        chat_obj.username = "oldgroup"
+        repo.session = AsyncMock()
+        repo.session.get.return_value = chat_obj
+        repo.get_all_allowed_chats.return_value = []
+
+        await on_chat_remove(cb, repo)
+
+        repo.remove_allowed_chat.assert_called_once_with(-100999)

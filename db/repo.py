@@ -16,9 +16,11 @@ class Repository:
         return result.scalar_one_or_none() is not None
 
     async def add_allowed_chat(
-        self, telegram_id: int, description: str = ""
+        self, telegram_id: int, username: str | None = None, description: str = ""
     ) -> AllowedChat:
-        chat = AllowedChat(telegram_id=telegram_id, description=description)
+        chat = AllowedChat(
+            telegram_id=telegram_id, username=username, description=description,
+        )
         self.session.add(chat)
         await self.session.commit()
         return chat
@@ -27,6 +29,11 @@ class Repository:
         stmt = delete(AllowedChat).where(AllowedChat.telegram_id == telegram_id)
         await self.session.execute(stmt)
         await self.session.commit()
+
+    async def get_all_allowed_chats(self) -> list[AllowedChat]:
+        stmt = select(AllowedChat).order_by(AllowedChat.id)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
 
     # --- Settings ---
 

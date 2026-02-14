@@ -87,6 +87,31 @@ def settings_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     text="🤖 Провайдеры", callback_data="settings:providers"
                 ),
+                InlineKeyboardButton(
+                    text="💬 Чаты", callback_data="settings:chats"
+                ),
             ],
         ]
     )
+
+
+def chats_keyboard(chats: list[tuple[int, str]]) -> InlineKeyboardMarkup:
+    """Keyboard for managing allowed chats.
+
+    ``chats`` is a list of ``(db_id, display_label)`` tuples.
+    """
+    rows: list[list[InlineKeyboardButton]] = []
+
+    for db_id, label in chats:
+        rows.append([
+            InlineKeyboardButton(text=label, callback_data="noop"),
+            InlineKeyboardButton(
+                text="❌", callback_data=f"chats:remove:{db_id}",
+            ),
+        ])
+
+    rows.append([
+        InlineKeyboardButton(text="➕ Добавить чат", callback_data="chats:add"),
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)

@@ -23,3 +23,8 @@ class EditSchedule(StatesGroup):
 
 class EditProviders(StatesGroup):
     waiting_for_json = State()
+
+
+class AddChat(StatesGroup):
+    waiting_for_input = State()
+    waiting_for_description = State()
