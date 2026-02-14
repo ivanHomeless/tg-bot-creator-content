@@ -1,8 +1,8 @@
-import json
 import logging
 
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
+from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
@@ -18,26 +18,14 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 
-@router.message(F.text == BTN_CREATE_POST)
-async def start_create_post(message: Message, state: FSMContext) -> None:
-    await state.clear()
-    await state.set_state(CreatePost.waiting_for_input)
-    await message.answer(
-        "Отправьте название товара.\n"
-        "Можно также приложить фото или видео (альбом)."
-    )
-
-
-@router.message(CreatePost.waiting_for_input)
-async def process_create_post(
+async def _generate_post(
     message: Message,
-    state: FSMContext,
     repo: Repository,
     tavily_api_key: str,
     llm_router: object,
     album: list[Message] | None = None,
 ) -> None:
-    # Extract product query text
+    """Shared logic: search + generate + save + send preview."""
     product_query = message.text or message.caption or ""
     if not product_query.strip():
         await message.answer("Пожалуйста, укажите название товара текстом.")
@@ -79,8 +67,6 @@ async def process_create_post(
         media_ids=media_ids or None,
     )
 
-    await state.clear()
-
     # Delete status message
     try:
         await status_msg.delete()
@@ -99,3 +85,53 @@ async def process_create_post(
             generated_text,
             reply_markup=post_actions_keyboard(post.id),
         )
+
+
+# ---- Private chat: button → FSM → generate ----
+
+@router.message(F.text == BTN_CREATE_POST)
+async def start_create_post(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await state.set_state(CreatePost.waiting_for_input)
+    await message.answer(
+        "Отправьте название товара.\n"
+        "Можно также приложить фото или видео (альбом)."
+    )
+
+
+@router.message(CreatePost.waiting_for_input)
+async def process_create_post(
+    message: Message,
+    state: FSMContext,
+    repo: Repository,
+    tavily_api_key: str,
+    llm_router: object,
+    album: list[Message] | None = None,
+) -> None:
+    await state.clear()
+    await _generate_post(message, repo, tavily_api_key, llm_router, album)
+
+
+# ---- Group: any message with text or media+caption → generate immediately ----
+
+def _is_group_content(message: Message) -> bool:
+    """Match group messages that have text (not a command) or media with caption."""
+    if message.chat.type not in ("group", "supergroup"):
+        return False
+    if message.text:
+        return not message.text.startswith("/")
+    # Photo/video/document with caption
+    if message.caption and (message.photo or message.video or message.document):
+        return True
+    return False
+
+
+@router.message(_is_group_content)
+async def group_create_post(
+    message: Message,
+    repo: Repository,
+    tavily_api_key: str,
+    llm_router: object,
+    album: list[Message] | None = None,
+) -> None:
+    await _generate_post(message, repo, tavily_api_key, llm_router, album)

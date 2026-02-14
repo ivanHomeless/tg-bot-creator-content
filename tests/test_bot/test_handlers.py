@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardMarkup
 
 from bot.handlers.start import cmd_start
-from bot.handlers.create_post import start_create_post, process_create_post
+from bot.handlers.create_post import start_create_post, process_create_post, group_create_post
 from bot.handlers.post_actions import on_post_action, on_edit_text, on_rewrite_prompt
 from bot.handlers.queue import cmd_queue, on_queue_page, on_queue_post_detail
 from bot.handlers.settings import (
@@ -52,9 +52,8 @@ class TestStartHandler:
 
         msg.answer.assert_called_once()
         kwargs = msg.answer.call_args
-        # No reply_markup kwarg or it's not a ReplyKeyboardMarkup
-        reply_markup = kwargs.kwargs.get("reply_markup") or kwargs[1].get("reply_markup") if kwargs[1] else None
-        assert reply_markup is None or not isinstance(reply_markup, ReplyKeyboardMarkup)
+        reply_markup = kwargs.kwargs.get("reply_markup")
+        assert reply_markup is None
 
 
 # --------------- Create Post Handler ---------------
@@ -246,6 +245,40 @@ class TestCreatePostHandler:
         preview_kwargs = msg.answer.call_args_list[1].kwargs
         reply_markup = preview_kwargs.get("reply_markup")
         assert isinstance(reply_markup, InlineKeyboardMarkup)
+
+    @patch("bot.handlers.create_post.build_graph")
+    async def test_group_create_post(self, mock_build_graph):
+        """Text message in group → immediate post generation (no FSM)."""
+        mock_graph = AsyncMock()
+        mock_graph.ainvoke.return_value = _make_graph_result("Group post")
+        mock_build_graph.return_value = mock_graph
+
+        msg = _make_message("group")
+        msg.text = "Samsung Galaxy S24"
+        msg.caption = None
+        msg.photo = None
+        msg.video = None
+        msg.document = None
+
+        repo = AsyncMock()
+        repo.get_setting.return_value = None
+        repo.create_post.return_value = _make_post_mock(post_id=10)
+
+        status_msg = AsyncMock()
+        msg.answer = AsyncMock(side_effect=[status_msg, AsyncMock()])
+
+        await group_create_post(
+            msg, repo,
+            tavily_api_key="fake-key",
+            llm_router=AsyncMock(),
+            album=None,
+        )
+
+        repo.create_post.assert_called_once()
+        call_kwargs = repo.create_post.call_args.kwargs
+        assert call_kwargs["original_text"] == "Samsung Galaxy S24"
+        assert call_kwargs["generated_text"] == "Group post"
+        assert msg.answer.call_count == 2
 
 
 # --------------- Post Actions Handler ---------------

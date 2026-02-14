@@ -94,7 +94,9 @@ async def build_app(cfg=None):
     dp.callback_query.middleware(session_mw)
 
     # Access control + media group
-    dp.message.middleware(AllowedChatsMiddleware())
+    access_mw = AllowedChatsMiddleware()
+    dp.message.middleware(access_mw)
+    dp.callback_query.middleware(access_mw)
     dp.message.middleware(MediaGroupMiddleware())
 
     # Routers

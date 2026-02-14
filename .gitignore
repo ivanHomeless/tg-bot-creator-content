@@ -43,3 +43,6 @@ Thumbs.db
 
 # Alembic
 alembic/versions/__pycache__/
+
+# Project files
+debug/

@@ -26,5 +26,5 @@ class AllowedChatsMiddleware(BaseMiddleware):
         if await repo.is_chat_allowed(chat.id):
             return await handler(event, data)
 
-        logger.debug("Chat %s not in allowed list, dropping update", chat.id)
+        logger.warning("Chat %s not in allowed list, dropping update", chat.id)
         return None
