@@ -5,7 +5,10 @@ from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardMarkup
 
 from bot.handlers.start import cmd_start
 from bot.handlers.create_post import start_create_post, process_create_post
-from bot.states.fsm import CreatePost
+from bot.handlers.post_actions import on_post_action, on_edit_text, on_rewrite_prompt
+from bot.states.fsm import CreatePost, EditPost, RewritePost
+from db.models import PostStatus
+from services.llm.base import LLMResponse
 
 
 def _make_message(chat_type: str = "private") -> MagicMock:
@@ -231,3 +234,176 @@ class TestCreatePostHandler:
         preview_kwargs = msg.answer.call_args_list[1].kwargs
         reply_markup = preview_kwargs.get("reply_markup")
         assert isinstance(reply_markup, InlineKeyboardMarkup)
+
+
+# --------------- Post Actions Handler ---------------
+
+
+def _make_callback(post_id: int, action: str, msg_text: str = "Post text"):
+    """Create a mock CallbackQuery for post:{id}:{action}."""
+    cb = AsyncMock()
+    cb.data = f"post:{post_id}:{action}"
+    cb.message = AsyncMock()
+    cb.message.text = msg_text
+    cb.message.edit_text = AsyncMock()
+    cb.message.edit_reply_markup = AsyncMock()
+    cb.message.answer = AsyncMock()
+    cb.answer = AsyncMock()
+    return cb
+
+
+class TestPostActionsHandler:
+    async def test_publish_now_calls_publisher(self):
+        """Publish action calls publish_post callable."""
+        cb = _make_callback(1, "publish")
+        repo = AsyncMock()
+        post = _make_post_mock(post_id=1)
+        post.status = PostStatus.pending.value
+        repo.get_post.return_value = post
+        repo.update_post_status.return_value = post
+
+        publish_fn = AsyncMock()
+        state = AsyncMock()
+
+        await on_post_action(cb, state, repo, publish_post=publish_fn)
+
+        publish_fn.assert_called_once_with(post)
+
+    async def test_publish_now_updates_status(self):
+        """Publish action sets status to published."""
+        cb = _make_callback(1, "publish")
+        repo = AsyncMock()
+        post = _make_post_mock(post_id=1)
+        post.status = PostStatus.pending.value
+        repo.get_post.return_value = post
+
+        state = AsyncMock()
+
+        await on_post_action(cb, state, repo, publish_post=AsyncMock())
+
+        repo.update_post_status.assert_called_with(1, PostStatus.published)
+
+    async def test_approve_sets_status(self):
+        """Approve action sets status to approved."""
+        cb = _make_callback(1, "approve")
+        repo = AsyncMock()
+        post = _make_post_mock(post_id=1)
+        post.status = PostStatus.pending.value
+        repo.get_post.return_value = post
+
+        state = AsyncMock()
+
+        await on_post_action(cb, state, repo)
+
+        repo.update_post_status.assert_called_with(1, PostStatus.approved)
+
+    async def test_edit_enters_fsm_state(self):
+        """Edit action sets FSM to EditPost.waiting_for_text."""
+        cb = _make_callback(1, "edit")
+        repo = AsyncMock()
+        post = _make_post_mock(post_id=1)
+        post.status = PostStatus.pending.value
+        repo.get_post.return_value = post
+
+        state = AsyncMock()
+
+        await on_post_action(cb, state, repo)
+
+        state.set_state.assert_called_once_with(EditPost.waiting_for_text)
+        state.update_data.assert_called_once_with(edit_post_id=1)
+
+    async def test_edit_sets_editing_status(self):
+        """Edit action sets post status to editing."""
+        cb = _make_callback(1, "edit")
+        repo = AsyncMock()
+        post = _make_post_mock(post_id=1)
+        post.status = PostStatus.pending.value
+        repo.get_post.return_value = post
+
+        state = AsyncMock()
+
+        await on_post_action(cb, state, repo)
+
+        repo.update_post_status.assert_called_with(1, PostStatus.editing)
+
+    async def test_edit_submit_new_text(self):
+        """Submitting new text in EditPost FSM updates generated_text and sets status=pending."""
+        msg = _make_message("private")
+        msg.text = "Updated post text"
+
+        state = AsyncMock()
+        state.get_data.return_value = {"edit_post_id": 5}
+
+        repo = AsyncMock()
+
+        await on_edit_text(msg, state, repo)
+
+        repo.update_post_text.assert_called_once_with(5, "Updated post text")
+        repo.update_post_status.assert_called_once_with(5, PostStatus.pending)
+        state.clear.assert_called_once()
+
+        # Preview with inline buttons sent
+        preview_kwargs = msg.answer.call_args.kwargs
+        assert isinstance(preview_kwargs.get("reply_markup"), InlineKeyboardMarkup)
+
+    async def test_rewrite_calls_llm(self):
+        """Rewrite action calls llm_router.generate with the prompt."""
+        msg = _make_message("private")
+        msg.text = "Make it shorter"
+
+        state = AsyncMock()
+        state.get_data.return_value = {"rewrite_post_id": 3}
+
+        repo = AsyncMock()
+        post = _make_post_mock(post_id=3)
+        post.generated_text = "Original long text"
+        repo.get_post.return_value = post
+
+        llm_router = AsyncMock()
+        llm_router.generate.return_value = LLMResponse(
+            text="Short text", provider_name="test", model="m"
+        )
+
+        status_msg = AsyncMock()
+        msg.answer = AsyncMock(side_effect=[status_msg, AsyncMock()])
+
+        await on_rewrite_prompt(msg, state, repo, llm_router=llm_router)
+
+        llm_router.generate.assert_called_once()
+        call_messages = llm_router.generate.call_args[0][0]
+        user_msg = next(m for m in call_messages if m["role"] == "user")
+        assert "Make it shorter" in user_msg["content"]
+
+        repo.update_post_text.assert_called_once_with(3, "Short text")
+        repo.update_post_status.assert_called_once_with(3, PostStatus.pending)
+
+    async def test_delete_removes_from_db(self):
+        """Delete action calls repo.delete_post."""
+        cb = _make_callback(1, "delete")
+        repo = AsyncMock()
+        post = _make_post_mock(post_id=1)
+        post.status = PostStatus.pending.value
+        repo.get_post.return_value = post
+
+        state = AsyncMock()
+
+        await on_post_action(cb, state, repo)
+
+        repo.delete_post.assert_called_once_with(1)
+
+    async def test_action_on_editing_post_blocked(self):
+        """Actions on a post with status=editing are rejected."""
+        cb = _make_callback(1, "approve")
+        repo = AsyncMock()
+        post = _make_post_mock(post_id=1)
+        post.status = PostStatus.editing.value
+        repo.get_post.return_value = post
+
+        state = AsyncMock()
+
+        await on_post_action(cb, state, repo)
+
+        # Status not changed, callback answered with reject message
+        repo.update_post_status.assert_not_called()
+        cb.answer.assert_called_once()
+        assert "редактируется" in cb.answer.call_args[0][0]
