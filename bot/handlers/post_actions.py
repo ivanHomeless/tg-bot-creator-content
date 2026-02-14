@@ -9,6 +9,7 @@ from bot.keyboards.inline import post_actions_keyboard
 from bot.states.fsm import EditPost, RewritePost
 from db.models import PostStatus
 from db.repo import Repository
+from services.ai.prompts import DEFAULT_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +111,10 @@ async def _handle_edit(
     await repo.update_post_status(post_id, PostStatus.editing)
     await state.set_state(EditPost.waiting_for_text)
     await state.update_data(edit_post_id=post_id)
+    logger.info(
+        "Edit FSM set: chat_id=%s user_id=%s post_id=%s",
+        callback.message.chat.id, callback.from_user.id, post_id,
+    )
     await callback.message.edit_reply_markup(reply_markup=None)
     await callback.message.answer(
         "Отправьте новый текст поста."
@@ -126,6 +131,10 @@ async def _handle_rewrite(
     await repo.update_post_status(post_id, PostStatus.editing)
     await state.set_state(RewritePost.waiting_for_prompt)
     await state.update_data(rewrite_post_id=post_id)
+    logger.info(
+        "Rewrite FSM set: chat_id=%s user_id=%s post_id=%s",
+        callback.message.chat.id, callback.from_user.id, post_id,
+    )
     await callback.message.edit_reply_markup(reply_markup=None)
     await callback.message.answer(
         "Отправьте дополнительные инструкции для переписывания поста."
@@ -151,6 +160,10 @@ async def on_edit_text(
     state: FSMContext,
     repo: Repository,
 ) -> None:
+    logger.info(
+        "on_edit_text: chat_id=%s user_id=%s state=%s",
+        message.chat.id, message.from_user.id, await state.get_state(),
+    )
     data = await state.get_data()
     post_id = data.get("edit_post_id")
     if not post_id:
@@ -180,6 +193,10 @@ async def on_rewrite_prompt(
     repo: Repository,
     llm_router: object | None = None,
 ) -> None:
+    logger.info(
+        "on_rewrite_prompt: chat_id=%s user_id=%s state=%s",
+        message.chat.id, message.from_user.id, await state.get_state(),
+    )
     data = await state.get_data()
     post_id = data.get("rewrite_post_id")
     if not post_id:
@@ -199,8 +216,22 @@ async def on_rewrite_prompt(
 
     status_msg = await message.answer("⏳ Переписываю пост...")
 
+    # Load system prompt from DB (or use default)
+    saved_prompt = await repo.get_setting("system_prompt")
+    base_prompt = saved_prompt or DEFAULT_SYSTEM_PROMPT
+
+    system_content = (
+        f"{base_prompt}\n\n"
+        f"Тебе дан готовый пост о товаре \"{post.original_text}\".\n"
+        "Перепиши его по инструкции пользователя.\n\n"
+        "ВАЖНО:\n"
+        "- Выведи ТОЛЬКО текст поста, без комментариев и пояснений\n"
+        "- Сохрани HTML-разметку (<b>, <i>, <code>)\n"
+        "- Не добавляй фразы типа \"Вот переписанный пост\" или \"Готово\""
+    )
+
     messages = [
-        {"role": "system", "content": "Перепиши пост по инструкции пользователя."},
+        {"role": "system", "content": system_content},
         {
             "role": "user",
             "content": (

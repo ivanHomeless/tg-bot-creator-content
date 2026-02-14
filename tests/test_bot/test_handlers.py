@@ -269,6 +269,9 @@ class TestCreatePostHandler:
         msg.video = None
         msg.document = None
 
+        state = AsyncMock()
+        state.get_state.return_value = None
+
         repo = AsyncMock()
         repo.get_setting.return_value = None
         repo.create_post.return_value = _make_post_mock(post_id=10)
@@ -277,7 +280,7 @@ class TestCreatePostHandler:
         msg.answer = AsyncMock(side_effect=[status_msg, AsyncMock()])
 
         await group_create_post(
-            msg, repo,
+            msg, state, repo,
             tavily_api_key="fake-key",
             llm_router=AsyncMock(),
             album_future=None,
@@ -288,6 +291,26 @@ class TestCreatePostHandler:
         assert call_kwargs["original_text"] == "Samsung Galaxy S24"
         assert call_kwargs["generated_text"] == "Group post"
         assert msg.answer.call_count == 2
+
+    @patch("bot.handlers.create_post.build_graph")
+    async def test_group_create_post_skips_when_fsm_active(self, mock_build_graph):
+        """group_create_post skips message when FSM state is active."""
+        msg = _make_message("group")
+        msg.text = "Новый текст"
+
+        state = AsyncMock()
+        state.get_state.return_value = "EditPost:waiting_for_text"
+
+        repo = AsyncMock()
+
+        await group_create_post(
+            msg, state, repo,
+            tavily_api_key="k",
+            llm_router=AsyncMock(),
+        )
+
+        mock_build_graph.assert_not_called()
+        repo.create_post.assert_not_called()
 
 
 # --------------- Post Actions Handler ---------------
@@ -407,11 +430,14 @@ class TestPostActionsHandler:
 
         state = AsyncMock()
         state.get_data.return_value = {"rewrite_post_id": 3}
+        state.get_state.return_value = "RewritePost:waiting_for_prompt"
 
         repo = AsyncMock()
         post = _make_post_mock(post_id=3)
         post.generated_text = "Original long text"
+        post.original_text = "Test Product"
         repo.get_post.return_value = post
+        repo.get_setting.return_value = None
 
         llm_router = AsyncMock()
         llm_router.generate.return_value = LLMResponse(
@@ -430,6 +456,97 @@ class TestPostActionsHandler:
 
         repo.update_post_text.assert_called_once_with(3, "Short text")
         repo.update_post_status.assert_called_once_with(3, PostStatus.pending)
+
+    async def test_rewrite_includes_original_text_and_system_prompt(self):
+        """on_rewrite_prompt includes post.original_text and DB system prompt."""
+        msg = _make_message("private")
+        msg.text = "Сделай короче"
+
+        state = AsyncMock()
+        state.get_data.return_value = {"rewrite_post_id": 3}
+        state.get_state.return_value = "RewritePost:waiting_for_prompt"
+
+        repo = AsyncMock()
+        post = _make_post_mock(post_id=3)
+        post.generated_text = "Длинный текст поста"
+        post.original_text = "iPhone 15 Pro"
+        repo.get_post.return_value = post
+        repo.get_setting.return_value = "Ты эксперт по постам."
+
+        llm_router = AsyncMock()
+        llm_router.generate.return_value = LLMResponse(
+            text="Короткий текст", provider_name="test", model="m"
+        )
+        status_msg = AsyncMock()
+        msg.answer = AsyncMock(side_effect=[status_msg, AsyncMock()])
+
+        await on_rewrite_prompt(msg, state, repo, llm_router=llm_router)
+
+        call_messages = llm_router.generate.call_args[0][0]
+        system_msg = next(m for m in call_messages if m["role"] == "system")
+        user_msg = next(m for m in call_messages if m["role"] == "user")
+        assert "Ты эксперт по постам" in system_msg["content"]
+        assert "iPhone 15 Pro" in system_msg["content"]
+        assert "Сделай короче" in user_msg["content"]
+        assert "Длинный текст поста" in user_msg["content"]
+
+    async def test_rewrite_no_meta_commentary_instruction(self):
+        """System prompt contains instruction to not add meta-commentary."""
+        msg = _make_message("private")
+        msg.text = "Перепиши"
+
+        state = AsyncMock()
+        state.get_data.return_value = {"rewrite_post_id": 1}
+        state.get_state.return_value = "RewritePost:waiting_for_prompt"
+
+        repo = AsyncMock()
+        post = _make_post_mock(post_id=1)
+        post.generated_text = "Текст"
+        post.original_text = "Товар"
+        repo.get_post.return_value = post
+        repo.get_setting.return_value = None
+
+        llm_router = AsyncMock()
+        llm_router.generate.return_value = LLMResponse(
+            text="Новый текст", provider_name="t", model="m"
+        )
+        status_msg = AsyncMock()
+        msg.answer = AsyncMock(side_effect=[status_msg, AsyncMock()])
+
+        await on_rewrite_prompt(msg, state, repo, llm_router=llm_router)
+
+        call_messages = llm_router.generate.call_args[0][0]
+        system_msg = next(m for m in call_messages if m["role"] == "system")
+        assert "ТОЛЬКО" in system_msg["content"]
+
+    async def test_rewrite_uses_default_prompt_when_no_setting(self):
+        """When no system prompt in DB, uses DEFAULT_SYSTEM_PROMPT."""
+        msg = _make_message("private")
+        msg.text = "Перепиши"
+
+        state = AsyncMock()
+        state.get_data.return_value = {"rewrite_post_id": 1}
+        state.get_state.return_value = "RewritePost:waiting_for_prompt"
+
+        repo = AsyncMock()
+        post = _make_post_mock(post_id=1)
+        post.generated_text = "Текст"
+        post.original_text = "Товар"
+        repo.get_post.return_value = post
+        repo.get_setting.return_value = None
+
+        llm_router = AsyncMock()
+        llm_router.generate.return_value = LLMResponse(
+            text="Новый", provider_name="t", model="m"
+        )
+        status_msg = AsyncMock()
+        msg.answer = AsyncMock(side_effect=[status_msg, AsyncMock()])
+
+        await on_rewrite_prompt(msg, state, repo, llm_router=llm_router)
+
+        call_messages = llm_router.generate.call_args[0][0]
+        system_msg = next(m for m in call_messages if m["role"] == "system")
+        assert "эксперт" in system_msg["content"].lower()
 
     async def test_delete_removes_from_db(self):
         """Delete action calls repo.delete_post."""

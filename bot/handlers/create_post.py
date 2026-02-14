@@ -146,9 +146,14 @@ def _is_group_content(message: Message) -> bool:
 @router.message(StateFilter(None), _is_group_content)
 async def group_create_post(
     message: Message,
+    state: FSMContext,
     repo: Repository,
     tavily_api_key: str,
     llm_router: object,
     album_future: asyncio.Future | None = None,
 ) -> None:
+    # Extra guard: skip if FSM state is active (e.g. edit/rewrite in progress)
+    current_state = await state.get_state()
+    if current_state is not None:
+        return
     await _generate_post(message, repo, tavily_api_key, llm_router, album_future)

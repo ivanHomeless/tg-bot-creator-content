@@ -101,10 +101,11 @@ async def build_app(cfg=None):
     dp.callback_query.middleware(access_mw)
     dp.message.middleware(MediaGroupMiddleware())
 
-    # Routers
+    # Routers — post_actions before create_post so FSM handlers
+    # (edit/rewrite) are checked before group_create_post
     dp.include_router(start.router)
-    dp.include_router(create_post.router)
     dp.include_router(post_actions.router)
+    dp.include_router(create_post.router)
     dp.include_router(queue.router)
     dp.include_router(settings.router)
 
