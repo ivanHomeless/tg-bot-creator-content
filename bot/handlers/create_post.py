@@ -34,6 +34,11 @@ async def _generate_post(
     # Extract media file_ids from album
     media_ids: list[str] = []
     messages_to_scan = album if album else [message]
+    logger.info(
+        "album=%s, messages_to_scan count=%d",
+        type(album).__name__ if album is not None else "None",
+        len(messages_to_scan),
+    )
     for msg in messages_to_scan:
         if msg.photo:
             media_ids.append(f"photo:{msg.photo[-1].file_id}")
@@ -41,6 +46,7 @@ async def _generate_post(
             media_ids.append(f"video:{msg.video.file_id}")
         elif msg.document:
             media_ids.append(f"document:{msg.document.file_id}")
+    logger.info("Extracted media_ids: %s", media_ids)
 
     # Status message
     status_msg = await message.answer("⏳ Собираю данные и генерирую пост...")
