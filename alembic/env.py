@@ -35,8 +35,20 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+def _render_item(type_, obj, autogen_context):
+    """Render PortableJSON as JSONB for PostgreSQL migrations."""
+    if type_ == "type" and hasattr(obj, "__class__") and obj.__class__.__name__ == "PortableJSON":
+        autogen_context.imports.add("from sqlalchemy.dialects.postgresql import JSONB")
+        return "JSONB()"
+    return False
+
+
 def do_run_migrations(connection):
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        render_item=_render_item,
+    )
     with context.begin_transaction():
         context.run_migrations()
 
