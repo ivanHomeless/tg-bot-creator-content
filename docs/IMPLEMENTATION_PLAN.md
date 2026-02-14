@@ -193,7 +193,7 @@ def mock_llm_router():
 
 ## Пошаговая реализация
 
-### Step 0: Docker + Config + Skeleton
+### Step 0: Docker + Config + Skeleton [Done]
 
 **Цель:** Структура каталогов, зависимости, Docker-окружение, конфигурация. Dev-среда с PostgreSQL доступна сразу.
 
@@ -301,7 +301,7 @@ def mock_llm_router():
 
 ---
 
-### Step 1: Database Layer (Models + Engine + Alembic)
+### Step 1: Database Layer (Models + Engine + Alembic) [Done]
 
 **Цель:** SQLAlchemy 2.0 модели, async engine, session factory, Alembic.
 
@@ -334,7 +334,7 @@ def mock_llm_router():
 
 ---
 
-### Step 2: Repository (CRUD)
+### Step 2: Repository (CRUD) [Done]
 
 **Цель:** `db/repo.py` — все операции с БД за чистым async-интерфейсом.
 
@@ -386,7 +386,7 @@ def mock_llm_router():
 
 ---
 
-### Step 3: LLM Provider System
+### Step 3: LLM Provider System [Done]
 
 **Цель:** Система ротации провайдеров: интерфейс + реализации + роутер. Полностью автономный модуль.
 
@@ -548,7 +548,7 @@ class ProviderRouter:
 
 ---
 
-### Step 4: AI Pipeline (LangGraph + Tavily + LLM)
+### Step 4: AI Pipeline (LangGraph + Tavily + LLM) [Done]
 
 **Цель:** LangGraph `StateGraph` с `search_node` (Tavily) и `generate_node` (ProviderRouter).
 
@@ -587,7 +587,7 @@ class ProviderRouter:
 
 ---
 
-### Step 5: Bot Foundation (Middlewares, FSM, Keyboards, Filters)
+### Step 5: Bot Foundation (Middlewares, FSM, Keyboards, Filters) [Done]
 
 **Цель:** Базовые компоненты бота: dispatcher, middlewares, FSM states, keyboards, filters.
 
@@ -635,7 +635,7 @@ class ProviderRouter:
 
 ---
 
-### Step 6: Handler — /start и Main Menu
+### Step 6: Handler — /start и Main Menu [Done]
 
 **Цель:** Команда `/start` показывает главное меню в ЛС.
 
@@ -654,7 +654,7 @@ class ProviderRouter:
 
 ---
 
-### Step 7: Handler — Create Post
+### Step 7: Handler — Create Post [Done]
 
 **Цель:** Полный флоу создания поста: приём товара + медиа, AI pipeline, сохранение, превью с кнопками.
 
@@ -682,7 +682,7 @@ class ProviderRouter:
 
 ---
 
-### Step 8: Handler — Post Actions (Inline Callbacks)
+### Step 8: Handler — Post Actions (Inline Callbacks) [Done]
 
 **Цель:** 5 inline-кнопок: publish, approve, edit, rewrite, delete.
 
@@ -713,7 +713,7 @@ class ProviderRouter:
 
 ---
 
-### Step 9: Publisher Service
+### Step 9: Publisher Service [Done]
 
 **Цель:** Публикация постов в канал с обработкой медиа и FloodWait.
 
@@ -738,7 +738,7 @@ class ProviderRouter:
 
 ---
 
-### Step 10: Handler — Queue (Approved Posts)
+### Step 10: Handler — Queue (Approved Posts) [Done]
 
 **Цель:** Пагинированный список approved постов с навигацией и действиями.
 
@@ -760,7 +760,7 @@ class ProviderRouter:
 
 ---
 
-### Step 11: Handler — Settings (Prompt + Schedule + Providers)
+### Step 11: Handler — Settings (Prompt + Schedule + Providers) [Done]
 
 **Цель:** Настройки: редактирование промпта, крон-расписания, конфига LLM-провайдеров.
 
@@ -798,7 +798,7 @@ class ProviderRouter:
 
 ---
 
-### Step 12: APScheduler Integration
+### Step 12: APScheduler Integration [Done]
 
 **Цель:** Крон-автопубликация approved постов.
 
@@ -822,7 +822,7 @@ class ProviderRouter:
 
 ---
 
-### Step 13: Entry Point + Final Integration
+### Step 13: Entry Point + Final Integration [Done]
 
 **Цель:** Собрать всё в `main.py`, seed дефолтные настройки, Docker-верификация.
 

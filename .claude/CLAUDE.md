@@ -35,7 +35,7 @@ AI-agent Telegram bot for content management. Accepts product names, searches th
 - `bot/middlewares/access.py` — AllowedChatsMiddleware (whitelist filter)
 - `bot/middlewares/media_group.py` — album collection with 1.5s buffer
 - `bot/keyboards/` — reply (main menu) + inline (post actions, queue nav, settings)
-- `bot/states/fsm.py` — FSM states (CreatePost, EditPost, RewritePost, EditPrompt, EditSchedule)
+- `bot/states/fsm.py` — FSM states (CreatePost, EditPost, RewritePost, EditPrompt, EditSchedule, EditProviders)
 
 ## LLM Provider System
 
@@ -89,7 +89,7 @@ Array order = priority. Can be changed via bot without restart.
 - Общие фикстуры: `tests/conftest.py` (db_engine, db_session, repo, mock_bot, mock_tavily, mock_llm_router)
 - **ВСЕ тесты должны быть зелёными (passing) — это обязательное требование**
 - **Тесты обязательны после каждого шага реализации. Переход к следующему шагу запрещён при красных тестах**
-- ~92 теста суммарно по всем модулям
+- 103 теста суммарно по всем модулям
 
 ## Documentation
 - `docs/PRD_TG_Bot_Creator.md` — product requirements document

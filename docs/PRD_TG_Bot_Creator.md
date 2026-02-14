@@ -81,13 +81,13 @@
 | key | String, PK | Ключ настройки |
 | value | Text | Значение |
 
-Базовые ключи: `system_prompt`, `schedule_cron`, `llm_providers`
+Базовые ключи: `system_prompt`, `cron_schedule`, `llm_providers`
 
 ### `posts`
 | Поле | Тип | Описание |
 |------|-----|----------|
 | id | Integer, PK | Автоинкремент |
-| media_ids | JSONB | Массив `[{"type": "photo", "file_id": "..."}]` |
+| media_ids | JSON | Массив строк `["photo:file_id", "video:file_id"]` |
 | original_text | Text | Исходный запрос пользователя |
 | generated_text | Text | Текст от нейросети |
 | status | Enum | `pending`, `approved`, `published`, `editing`, `deleted` |
