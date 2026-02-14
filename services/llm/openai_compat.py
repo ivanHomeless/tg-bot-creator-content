@@ -96,8 +96,16 @@ class OpenAICompatibleProvider(LLMProvider):
                     if usage:
                         tokens = usage.get("total_tokens")
 
+                text = response.content
+                # Some models return content as list of blocks
+                if isinstance(text, list):
+                    text = "".join(
+                        block.get("text", "") if isinstance(block, dict) else str(block)
+                        for block in text
+                    )
+
                 return LLMResponse(
-                    text=response.content,
+                    text=text,
                     provider_name=self._name,
                     model=model,
                     tokens_used=tokens,
