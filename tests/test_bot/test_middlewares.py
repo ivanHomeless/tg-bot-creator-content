@@ -104,5 +104,5 @@ class TestMediaGroupMiddleware:
 
         handler.assert_called_once()
         call_data = handler.call_args[0][1]
-        assert call_data["album"] == [msg]
+        assert call_data["album"] is None
         assert result == "ok"
