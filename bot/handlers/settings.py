@@ -138,7 +138,6 @@ async def on_edit_providers_start(
 @router.message(EditProviders.waiting_for_json, F.document)
 async def on_providers_json_file(
     message: Message, state: FSMContext, repo: Repository, bot: Bot,
-    dispatcher: object = None,
 ) -> None:
     doc = message.document
     if not doc.file_name.endswith(".json"):
@@ -180,10 +179,13 @@ async def on_providers_json_file(
     providers_str = json.dumps(data, ensure_ascii=False)
     await repo.set_setting("llm_providers", providers_str)
 
-    # Hot-reload: rebuild llm_router
+    # Hot-reload: rebuild llm_router in the Dispatcher
     from main import _build_llm_router
-    if dispatcher is not None:
-        dispatcher["llm_router"] = _build_llm_router(providers_str)
+    dp = router.parent_router
+    if dp is not None:
+        while dp.parent_router is not None:
+            dp = dp.parent_router
+        dp["llm_router"] = _build_llm_router(providers_str)
 
     await state.clear()
     await message.answer(f"✅ Конфиг провайдеров обновлён ({len(data)} шт.).")
