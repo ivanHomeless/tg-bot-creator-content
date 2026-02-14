@@ -44,6 +44,9 @@ Thumbs.db
 # Alembic
 alembic/versions/__pycache__/
 
+# DB
+init_db.sql
+
 # Logs
 logs/*.log*
 
