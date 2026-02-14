@@ -437,7 +437,6 @@ class TestPostActionsHandler:
         post.generated_text = "Original long text"
         post.original_text = "Test Product"
         repo.get_post.return_value = post
-        repo.get_setting.return_value = None
 
         llm_router = AsyncMock()
         llm_router.generate.return_value = LLMResponse(
@@ -457,8 +456,8 @@ class TestPostActionsHandler:
         repo.update_post_text.assert_called_once_with(3, "Short text")
         repo.update_post_status.assert_called_once_with(3, PostStatus.pending)
 
-    async def test_rewrite_includes_original_text_and_system_prompt(self):
-        """on_rewrite_prompt includes post.original_text and DB system prompt."""
+    async def test_rewrite_includes_original_text_in_user_msg(self):
+        """on_rewrite_prompt includes post.original_text and generated_text in user message."""
         msg = _make_message("private")
         msg.text = "Сделай короче"
 
@@ -471,7 +470,6 @@ class TestPostActionsHandler:
         post.generated_text = "Длинный текст поста"
         post.original_text = "iPhone 15 Pro"
         repo.get_post.return_value = post
-        repo.get_setting.return_value = "Ты эксперт по постам."
 
         llm_router = AsyncMock()
         llm_router.generate.return_value = LLMResponse(
@@ -483,10 +481,8 @@ class TestPostActionsHandler:
         await on_rewrite_prompt(msg, state, repo, llm_router=llm_router)
 
         call_messages = llm_router.generate.call_args[0][0]
-        system_msg = next(m for m in call_messages if m["role"] == "system")
         user_msg = next(m for m in call_messages if m["role"] == "user")
-        assert "Ты эксперт по постам" in system_msg["content"]
-        assert "iPhone 15 Pro" in system_msg["content"]
+        assert "iPhone 15 Pro" in user_msg["content"]
         assert "Сделай короче" in user_msg["content"]
         assert "Длинный текст поста" in user_msg["content"]
 
@@ -504,7 +500,6 @@ class TestPostActionsHandler:
         post.generated_text = "Текст"
         post.original_text = "Товар"
         repo.get_post.return_value = post
-        repo.get_setting.return_value = None
 
         llm_router = AsyncMock()
         llm_router.generate.return_value = LLMResponse(
@@ -519,8 +514,8 @@ class TestPostActionsHandler:
         system_msg = next(m for m in call_messages if m["role"] == "system")
         assert "ТОЛЬКО" in system_msg["content"]
 
-    async def test_rewrite_uses_default_prompt_when_no_setting(self):
-        """When no system prompt in DB, uses DEFAULT_SYSTEM_PROMPT."""
+    async def test_rewrite_system_prompt_is_lightweight(self):
+        """Rewrite system prompt does not include the base generation prompt."""
         msg = _make_message("private")
         msg.text = "Перепиши"
 
@@ -533,7 +528,6 @@ class TestPostActionsHandler:
         post.generated_text = "Текст"
         post.original_text = "Товар"
         repo.get_post.return_value = post
-        repo.get_setting.return_value = None
 
         llm_router = AsyncMock()
         llm_router.generate.return_value = LLMResponse(
@@ -546,7 +540,9 @@ class TestPostActionsHandler:
 
         call_messages = llm_router.generate.call_args[0][0]
         system_msg = next(m for m in call_messages if m["role"] == "system")
-        assert "эксперт" in system_msg["content"].lower()
+        # System prompt should be lightweight — no base generation prompt
+        assert "эксперт" not in system_msg["content"].lower()
+        assert "Перепиши" in system_msg["content"]
 
     async def test_delete_removes_from_db(self):
         """Delete action calls repo.delete_post."""

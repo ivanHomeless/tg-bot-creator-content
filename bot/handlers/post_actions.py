@@ -9,7 +9,6 @@ from bot.keyboards.inline import post_actions_keyboard
 from bot.states.fsm import EditPost, RewritePost
 from db.models import PostStatus
 from db.repo import Repository
-from services.ai.prompts import DEFAULT_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -216,14 +215,8 @@ async def on_rewrite_prompt(
 
     status_msg = await message.answer("⏳ Переписываю пост...")
 
-    # Load system prompt from DB (or use default)
-    saved_prompt = await repo.get_setting("system_prompt")
-    base_prompt = saved_prompt or DEFAULT_SYSTEM_PROMPT
-
     system_content = (
-        f"{base_prompt}\n\n"
-        f"Тебе дан готовый пост о товаре \"{post.original_text}\".\n"
-        "Перепиши его по инструкции пользователя.\n\n"
+        "Тебе дан готовый пост. Перепиши его по инструкции пользователя.\n\n"
         "ВАЖНО:\n"
         "- Выведи ТОЛЬКО текст поста, без комментариев и пояснений\n"
         "- Сохрани HTML-разметку (<b>, <i>, <code>)\n"
@@ -235,6 +228,7 @@ async def on_rewrite_prompt(
         {
             "role": "user",
             "content": (
+                f"Товар: {post.original_text}\n\n"
                 f"Текущий текст поста:\n{post.generated_text}\n\n"
                 f"Инструкция: {prompt}"
             ),
